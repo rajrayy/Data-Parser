@@ -1,0 +1,89 @@
+#!/bin/bash
+
+#Name : Raj Ray Chaudhury
+#Date : 1st May, 2021
+#Environment: 5.4.0-70-generic #78-Ubuntu SMP x86_64 x86_64 x86_64 GNU/Linux
+
+#____________________________________________________________________________________________________________________________________________________________________________________________
+
+
+#Checking if the number of parameters provided is more than 1.
+
+if (( $# > 1 )); then
+   echo "No more than 1 directory locations"
+   exit 1
+   fi
+
+#If no parameters are provided while running the bash script, the current working directory is assigned as the top-level data directory
+
+if [[ $# -eq 0 ]]; then
+   Dirloc="$(pwd)"
+fi
+
+#If a target location for the top-level directory (which hosts the states and the counties) is provided, the location is checked to verify if indeed it points to a directory location. The  +path is assigned if verified. If not, an error message is displayed.
+
+if [[ $# -eq 1 ]]; then
+   if [[ -d $1 ]]; then
+      Dirloc="$1"
+   else
+      >&2 echo "Not a directory"
+      exit 1
+   fi
+fi
+
+#Creating a temporary file in the user's TEMP directory to store the CSV data
+
+f="$(mktemp -t cs265-data.XXXX)"
+
+#Using the curl utility to pull data from online CSV and store it in the newly created temporary file
+
+curl 'https://www.data.va.gov/api/views/mzhw-i2y6/rows.csv?accessType=DOWNLOAD' >| "$f"
+
+#After reaching the top-level directory, we enter into the corresponding "state" path and subsequently into the "county" path. "$y" specifies the complete path where the "va.xml" file will +be generated. The state and county paths are verified to check if at every step they represent the correct directory structure as outlined in the sample directory for the assignment.
+
+
+for x in /$Dirloc/*/; do
+   if [ -d "$x" ]; then
+      for y in /"$x"/*/; do
+         if [ -d "$y" ]; then
+
+#Extracting the exact "state" and "county" name from the complete verified path.
+
+         county=${y%/*}
+         county=${county##*/}
+         state=${y%//*}
+         state=${state##*/}
+
+
+#Checking to ensure if the state and county pair specified by the user, is a legitimate state county pair per the data in the CSV. Only, if true, will the va.xml file be generated.
+
+         check=$(awk -F',' -v a="$state" -v b="$county" '$1==a && $2==b {print "1"}' "$f")
+
+         if [[ $check == 1 ]]; then
+
+#Extracting the necessary field values for the state county pair from the CSV using awk to parse the relevant data
+
+         population=$(awk -F',' -v a="$state" -v b="$county" '$1==a && $2==b {print $3}' "$f")
+         total=$(awk -F',' -v a="$state" -v b="$county" '$1==a && $2==b {print $4}' "$f")
+         education=$(awk -F',' -v a="$state" -v b="$county" '$1==a && $2==b {print $7}' "$f")
+         medical=$(awk -F',' -v a="$state" -v b="$county" '$1==a && $2==b {print $11}' "$f")
+
+#Generating the required XML file in the target location
+
+         echo "<?xml version="1.0" encoding="ISO-8859-1"?>
+         <vadata><population> $population </population>
+         <total> $total </total>
+         <education> $education </education>
+         <medical> $medical </medical>
+         </vadata>" > "$y/va.xml"
+
+         fi
+
+#The next line deletes all the XML files generated. Uncomment the next line if you want to free up the space taken up by the generated files.
+
+      #  rm -rf "$y/va.xml"
+
+
+         fi
+
+      done
